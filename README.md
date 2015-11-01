@@ -3,15 +3,15 @@ Printcore is a library that makes writing reprap hosts easy
 ## Linux
 ### Ubuntu/Debian
 
-You can run Printrun directly from source, as there are no packages available yet. Fetch and install the dependencies using
+You can run Printcore directly from source, as there are no packages available yet. Fetch and install the dependencies using
 
 1. `sudo apt-get install python-serial python2.7 git`
 
 Clone the repository
 
-`git clone https://github.com/Skeen/Printrun.git`
+`git clone https://github.com/Skeen/Printcore.git`
 
-and you can start using Printcore from the Printrun directory created by the git clone command.
+and you can start using Printcore from the Printcore directory created by the git clone command.
 
 ## USING PRINTCORE
 
@@ -36,18 +36,18 @@ p.disconnect() # this is how you disconnect from the printer once you are done. 
 # LICENSE
 
 ```
-Printrun is free software: you can redistribute it and/or modify
+Printcore is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-Printrun is distributed in the hope that it will be useful,
+Printcore is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with Printrun.  If not, see <http://www.gnu.org/licenses/>.
+along with Printcore.  If not, see <http://www.gnu.org/licenses/>.
 ```
 
 All scripts should contain this license note, if not, feel free to ask us. Please note that files where it is difficult to state this license note (such as images) are distributed under the same terms.
