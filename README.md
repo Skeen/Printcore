@@ -13,6 +13,18 @@ Clone the repository
 
 and you can start using Printcore from the Printcore directory created by the git clone command.
 
+### Openwrt
+
+You can run Printcore directly from source, as there are no packages available yet. Fetch and install the dependencies using
+
+1. `opkg install python-base python-light python-pyserial python-logging python-codecs`
+
+Clone the repository
+
+`git clone https://github.com/Skeen/Printcore.git`
+
+and you can start using Printcore from the Printcore directory created by the git clone command.
+
 ## USING PRINTCORE
 
 See the bottom of printcore.py for a simple command-line sender, or the following code example:
