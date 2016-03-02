@@ -1,4 +1,12 @@
-Printcore is a library that makes writing reprap hosts easy
+# PrintCore
+
+This repository features a stripped down version of Printrun,
+which provides nothing but the files required to run PrintCore itself.
+
+PrintCore is a library that makes writing reprap hosts easy.
+Additionally, it's a stupid gcode sender program.
+
+For information about Printrun itself, head over to [kliment/Printrun](https://github.com/kliment/Printrun)
 
 ## Linux
 ### Ubuntu/Debian
