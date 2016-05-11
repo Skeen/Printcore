@@ -89,6 +89,8 @@ class printcore():
         self.log = deque(maxlen = 10000)
         self.sent = []
         self.writefailures = 0
+        self.gcode_consumed = None
+        self.listener = None
         self.tempcb = None  # impl (wholeline)
         self.recvcb = None  # impl (wholeline)
         self.sendcb = None  # impl (wholeline)
@@ -315,6 +317,10 @@ class printcore():
                 continue
             if line.startswith(tuple(self.greetings)) or line.startswith('ok'):
                 self.clear = True
+            if line.startswith('ok') and self.listener:
+                # callback for temp, status, whatever
+                try: self.listener(line)
+                except: self.logError(traceback.format_exc())
             if line.startswith('ok') and "T:" in line and self.tempcb:
                 # callback for temp, status, whatever
                 try: self.tempcb(line)
@@ -372,7 +378,7 @@ class printcore():
         """
         if self.printing or not self.online or not self.printer:
             return False
-        self.queueindex = startindex
+        self._set_queueindex(startindex)
         self.mainqueue = gcode
         self.printing = True
         self.lineno = 0
@@ -519,6 +525,16 @@ class printcore():
         if command.startswith(";@pause"):
             self.pause()
 
+    def _set_queueindex(self, value):
+        self.queueindex = value;
+        # TODO: Callback
+
+    def _increment_queueindex(self):
+        self.queueindex += 1
+        if self.gcode_consumed:
+            try: self.gcode_consumed()
+            except: self.logError(traceback.format_exc())
+
     def _sendnext(self):
         if not self.printer:
             return
@@ -542,7 +558,15 @@ class printcore():
             return
         if self.printing and self.queueindex < len(self.mainqueue):
             (layer, line) = self.mainqueue.idxs(self.queueindex)
-            gline = self.mainqueue.all_layers[layer][line]
+            #print("index: %d - queue: %d" % (self.queueindex, len(self.mainqueue)))
+            #print("layer: %d - line: %d" % (layer, line))
+            layer = self.mainqueue.all_layers[layer]
+            #print("len(layer) = %d" % len(layer))
+            if(line >= len(layer)):
+                self._increment_queueindex();
+                self.clear = True;
+                return
+            gline = layer[line]
             if self.layerchangecb and self.queueindex > 0:
                 (prev_layer, prev_line) = self.mainqueue.idxs(self.queueindex - 1)
                 if prev_layer != layer:
@@ -556,13 +580,13 @@ class printcore():
                     next_gline = None
                 gline = self.preprintsendcb(gline, next_gline)
             if gline is None:
-                self.queueindex += 1
+                self._increment_queueindex();
                 self.clear = True
                 return
             tline = gline.raw
             if tline.lstrip().startswith(";@"):  # check for host command
                 self.process_host_command(tline)
-                self.queueindex += 1
+                self._increment_queueindex();
                 self.clear = True
                 return
 
@@ -576,12 +600,12 @@ class printcore():
                     except: self.logError(traceback.format_exc())
             else:
                 self.clear = True
-            self.queueindex += 1
+            self._increment_queueindex();
         else:
             self.printing = False
             self.clear = True
             if not self.paused:
-                self.queueindex = 0
+                self._set_queueindex(0);
                 self.lineno = 0
                 self._send("M110", -1, True)
 

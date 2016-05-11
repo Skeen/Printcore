@@ -19,6 +19,7 @@ import time
 import getopt
 import sys
 import getopt
+import os
 
 from printrun.printcore import printcore
 from printrun.utils import setup_logging
@@ -85,21 +86,66 @@ if __name__ == '__main__':
     p = printcore(port, baud)
     p.loud = loud
     time.sleep(2)
-    gcode = [i.strip() for i in open(filename)]
-    gcode = gcoder.LightGCode(gcode)
+
+    # Output gcode object
+    gcode = gcoder.LightGCode()
+    # Open gcodefile
+    gcodefile = open(filename);
+    # Find the number of lines in the file
+    num_lines = sum(1 for line in open(filename))
+    # Find the size of the file in bytes
+    file_size = os.path.getsize(filename)
+    bytes_read = 0
+
+    # Function to add a gcode from the file to our object
+    def add_gcode():
+        global gcodefile
+        global num_lines
+        global bytes_read
+
+        line = gcodefile.readline()
+        bytes_read += len(line)
+        # if we're at the end of the file
+        if(line == ''):
+            return
+        # if we read an empty line
+        if(line == '\n'):
+            # Adjust our progess max value
+            num_lines -= 1
+            # Consume another gcode
+            add_gcode();
+            return;
+        # Try to add the line
+        stripped = line.strip();
+        result = gcode.append(stripped);
+        # If we did not add anything (invalid line, ect)
+        if(result == None):
+            # Adjust our progess max value
+            num_lines -= 1
+            # Consume another gcode
+            add_gcode();
+
+    # Whenever a gcode is consumed add a new one
+    p.gcode_consumed = add_gcode;
+    # Add 100 gcodes to start off
+    for x in xrange(100):
+        add_gcode();
+    # Start printing
     p.startprint(gcode)
 
     try:
         if statusreport:
             p.loud = False
-            sys.stdout.write("Progress: 00.0%\r")
+            sys.stdout.write("Progress: %d / %d (%d) = %02.1f%%\r" % (0, num_lines, len(p.mainqueue), 0))
             sys.stdout.flush()
         while p.printing:
-            time.sleep(1)
+            time.sleep(0.1)
             if statusreport:
-                progress = 100 * float(p.queueindex) / len(p.mainqueue)
-                sys.stdout.write("Progress: %02.1f%%\r" % progress)
+                #progress = 100 * float(p.queueindex) / num_lines
+                progress = 100 * float(bytes_read) / file_size
+                sys.stdout.write("Progress: %d / %d (%d) = %02.1f%%\r" % (p.queueindex, num_lines, len(p.mainqueue), progress))
                 sys.stdout.flush()
+        time.sleep(10)
         p.disconnect()
         sys.exit(0)
     except:
