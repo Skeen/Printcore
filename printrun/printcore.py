@@ -86,8 +86,8 @@ class printcore():
         self.resendfrom = -1
         self.paused = False
         self.sentlines = {}
-        self.log = deque(maxlen = 10000)
-        self.sent = []
+        #self.log = deque(maxlen = 10000)
+        #self.sent = []
         self.writefailures = 0
         self.gcode_consumed = None
         self.listener = None
@@ -102,7 +102,6 @@ class printcore():
         self.endcb = None  # impl ()
         self.onlinecb = None  # impl ()
         self.loud = False  # emit sent and received lines to terminal
-        self.tcp_streaming_mode = False
         self.greetings = ['start', 'Grbl ']
         self.wait = 0  # default wait period for send(), send_now()
         self.read_thread = None
@@ -173,50 +172,30 @@ class printcore():
                     except:
                         pass
             self.writefailures = 0
-            if not is_serial:
-                self.printer_tcp = socket.socket(socket.AF_INET,
-                                                 socket.SOCK_STREAM)
-                self.printer_tcp.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                self.timeout = 0.25
-                self.printer_tcp.settimeout(1.0)
-                try:
-                    self.printer_tcp.connect((hostname, port))
-                    self.printer_tcp.settimeout(self.timeout)
-                    self.printer = self.printer_tcp.makefile()
-                except socket.error as e:
-                    if(e.strerror is None): e.strerror=""
-                    self.logError(_("Could not connect to %s:%s:") % (hostname, port) +
-                                  "\n" + _("Socket error %s:") % e.errno +
-                                  "\n" + e.strerror)
-                    self.printer = None
-                    self.printer_tcp = None
-                    return
-            else:
-                disable_hup(self.port)
-                self.printer_tcp = None
-                try:
-                    self.printer = Serial(port = self.port,
-                                          baudrate = self.baud,
-                                          timeout = 0.25,
-                                          parity = PARITY_ODD)
-                    self.printer.close()
-                    self.printer.parity = PARITY_NONE
-                    try:  #this appears not to work on many platforms, so we're going to call it but not care if it fails
-                        self.printer.setDTR(dtr);
-                    except:
-                        #self.logError(_("Could not set DTR on this platform")) #not sure whether to output an error message
-                        pass
-                    self.printer.open()
-                except SerialException as e:
-                    self.logError(_("Could not connect to %s at baudrate %s:") % (self.port, self.baud) +
-                                  "\n" + _("Serial error: %s") % e)
-                    self.printer = None
-                    return
-                except IOError as e:
-                    self.logError(_("Could not connect to %s at baudrate %s:") % (self.port, self.baud) +
-                                  "\n" + _("IO error: %s") % e)
-                    self.printer = None
-                    return
+            disable_hup(self.port)
+            try:
+                self.printer = Serial(port = self.port,
+                                      baudrate = self.baud,
+                                      timeout = 0.25,
+                                      parity = PARITY_ODD)
+                self.printer.close()
+                self.printer.parity = PARITY_NONE
+                try:  #this appears not to work on many platforms, so we're going to call it but not care if it fails
+                    self.printer.setDTR(dtr);
+                except:
+                    #self.logError(_("Could not set DTR on this platform")) #not sure whether to output an error message
+                    pass
+                self.printer.open()
+            except SerialException as e:
+                self.logError(_("Could not connect to %s at baudrate %s:") % (self.port, self.baud) +
+                              "\n" + _("Serial error: %s") % e)
+                self.printer = None
+                return
+            except IOError as e:
+                self.logError(_("Could not connect to %s at baudrate %s:") % (self.port, self.baud) +
+                              "\n" + _("IO error: %s") % e)
+                self.printer = None
+                return
             self.stop_read_thread = False
             self.read_thread = threading.Thread(target = self._listen)
             self.read_thread.start()
@@ -225,7 +204,7 @@ class printcore():
     def reset(self):
         """Reset the printer
         """
-        if self.printer and not self.printer_tcp:
+        if self.printer:
             self.printer.setDTR(1)
             time.sleep(0.2)
             self.printer.setDTR(0)
@@ -234,13 +213,11 @@ class printcore():
         try:
             try:
                 line = self.printer.readline()
-                if self.printer_tcp and not line:
-                    raise OSError(-1, "Read EOF from socket")
             except socket.timeout:
                 return ""
 
             if len(line) > 1:
-                self.log.append(line)
+                #self.log.append(line)
                 if self.recvcb:
                     try: self.recvcb(line)
                     except: self.logError(traceback.format_exc())
@@ -266,8 +243,6 @@ class printcore():
             return None
 
     def _listen_can_continue(self):
-        if self.printer_tcp:
-            return not self.stop_read_thread and self.printer
         return (not self.stop_read_thread
                 and self.printer
                 and self.printer.isOpen())
@@ -504,8 +479,8 @@ class printcore():
             while self.printing and self.printer and self.online:
                 self._sendnext()
             self.sentlines = {}
-            self.log.clear()
-            self.sent = []
+            #self.log.clear()
+            #self.sent = []
             if self.endcb:
                 # callback for printing done
                 try: self.endcb()
@@ -540,10 +515,7 @@ class printcore():
             return
         while self.printer and self.printing and not self.clear:
             time.sleep(0.001)
-        # Only wait for oks when using serial connections or when not using tcp
-        # in streaming mode
-        if not self.printer_tcp or not self.tcp_streaming_mode:
-            self.clear = False
+        self.clear = False
         if not (self.printing and self.printer and self.online):
             self.clear = True
             return
@@ -552,6 +524,12 @@ class printcore():
             self.resendfrom += 1
             return
         self.resendfrom = -1
+        # Remove old send lines
+        remove_sent_index = self.lineno - 100;
+        if self.sentlines.get(remove_sent_index, None) != None:
+            #print("ALFA %d" % (remove_sent_index));
+            del self.sentlines[remove_sent_index];
+
         if not self.priqueue.empty():
             self._send(self.priqueue.get_nowait())
             self.priqueue.task_done()
@@ -610,14 +588,14 @@ class printcore():
                 self._send("M110", -1, True)
 
     def _send(self, command, lineno = 0, calcchecksum = False):
-        # Only add checksums if over serial (tcp does the flow control itself)
-        if calcchecksum and not self.printer_tcp:
+        # Only add checksums if over serial
+        if calcchecksum:
             prefix = "N" + str(lineno) + " " + command
             command = prefix + "*" + str(self._checksum(prefix))
             if "M110" not in command:
                 self.sentlines[lineno] = command
         if self.printer:
-            self.sent.append(command)
+            #self.sent.append(command)
             # run the command through the analyzer
             gline = None
             try:
@@ -632,11 +610,6 @@ class printcore():
                 except: self.logError(traceback.format_exc())
             try:
                 self.printer.write(str(command + "\n"))
-                if self.printer_tcp:
-                    try:
-                        self.printer.flush()
-                    except socket.timeout:
-                        pass
                 self.writefailures = 0
             except socket.error as e:
                 if e.errno is None:
