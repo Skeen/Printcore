@@ -82,6 +82,7 @@ class printcore():
         self.mainqueue = None
         self.priqueue = Queue(0)
         self.queueindex = 0
+        self.evict_offset = 0
         self.lineno = 0
         self.resendfrom = -1
         self.paused = False
@@ -94,9 +95,7 @@ class printcore():
         self.tempcb = None  # impl (wholeline)
         self.recvcb = None  # impl (wholeline)
         self.sendcb = None  # impl (wholeline)
-        self.preprintsendcb = None  # impl (wholeline)
         self.printsendcb = None  # impl (wholeline)
-        self.layerchangecb = None  # impl (wholeline)
         self.errorcb = None  # impl (wholeline)
         self.startcb = None  # impl ()
         self.endcb = None  # impl ()
@@ -356,6 +355,7 @@ class printcore():
         self._set_queueindex(startindex)
         self.mainqueue = gcode
         self.printing = True
+        self.evict_offset = 0
         self.lineno = 0
         self.resendfrom = -1
         self._send("M110", -1, True)
@@ -373,19 +373,6 @@ class printcore():
         self.paused = False
         self.mainqueue = None
         self.clear = True
-
-    # run a simple script if it exists, no multithreading
-    def runSmallScript(self, filename):
-        if filename is None: return
-        f = None
-        try:
-            with open(filename) as f:
-                for i in f:
-                    l = i.replace("\n", "")
-                    l = l[:l.find(";")]  # remove comments
-                    self.send_now(l)
-        except:
-            pass
 
     def pause(self):
         """Pauses the print, saving the current position.
@@ -494,18 +481,15 @@ class printcore():
             self.print_thread = None
             self._start_sender()
 
-    def process_host_command(self, command):
-        """only ;@pause command is implemented as a host command in printcore, but hosts are free to reimplement this method"""
-        command = command.lstrip()
-        if command.startswith(";@pause"):
-            self.pause()
-
     def _set_queueindex(self, value):
         self.queueindex = value;
         # TODO: Callback
 
     def _increment_queueindex(self):
         self.queueindex += 1
+        self.mainqueue.lines.pop(0)
+        self.evict_offset += 1
+
         if self.gcode_consumed:
             try: self.gcode_consumed()
             except: self.logError(traceback.format_exc())
@@ -527,47 +511,21 @@ class printcore():
         # Remove old send lines
         remove_sent_index = self.lineno - 100;
         if self.sentlines.get(remove_sent_index, None) != None:
-            #print("ALFA %d" % (remove_sent_index));
             del self.sentlines[remove_sent_index];
 
         if not self.priqueue.empty():
             self._send(self.priqueue.get_nowait())
             self.priqueue.task_done()
             return
-        if self.printing and self.queueindex < len(self.mainqueue):
-            (layer, line) = self.mainqueue.idxs(self.queueindex)
-            #print("index: %d - queue: %d" % (self.queueindex, len(self.mainqueue)))
-            #print("layer: %d - line: %d" % (layer, line))
-            layer = self.mainqueue.all_layers[layer]
-            #print("len(layer) = %d" % len(layer))
-            if(line >= len(layer)):
-                self._increment_queueindex();
-                self.clear = True;
-                return
-            gline = layer[line]
-            if self.layerchangecb and self.queueindex > 0:
-                (prev_layer, prev_line) = self.mainqueue.idxs(self.queueindex - 1)
-                if prev_layer != layer:
-                    try: self.layerchangecb(layer)
-                    except: self.logError(traceback.format_exc())
-            if self.preprintsendcb:
-                if self.queueindex + 1 < len(self.mainqueue):
-                    (next_layer, next_line) = self.mainqueue.idxs(self.queueindex + 1)
-                    next_gline = self.mainqueue.all_layers[next_layer][next_line]
-                else:
-                    next_gline = None
-                gline = self.preprintsendcb(gline, next_gline)
+        if self.printing and (self.queueindex - self.evict_offset) < len(self.mainqueue):
+
+            gline = self.mainqueue.lines[self.queueindex - self.evict_offset]
+
             if gline is None:
                 self._increment_queueindex();
                 self.clear = True
                 return
             tline = gline.raw
-            if tline.lstrip().startswith(";@"):  # check for host command
-                self.process_host_command(tline)
-                self._increment_queueindex();
-                self.clear = True
-                return
-
             # Strip comments
             tline = gcoder.gcode_strip_comment_exp.sub("", tline).strip()
             if tline:
@@ -578,12 +536,14 @@ class printcore():
                     except: self.logError(traceback.format_exc())
             else:
                 self.clear = True
+
             self._increment_queueindex();
         else:
             self.printing = False
             self.clear = True
             if not self.paused:
                 self._set_queueindex(0);
+                self.evict_offset = 0;
                 self.lineno = 0
                 self._send("M110", -1, True)
 
