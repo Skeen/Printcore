@@ -295,7 +295,7 @@ class printcore():
                 # callback for temp, status, whatever
                 try: self.listener(line)
                 except: self.logError(traceback.format_exc())
-            if line.startswith('ok') and "T:" in line and self.tempcb:
+            if (line.startswith('ok') and "T:" in line or line.startswith('T:')) and self.tempcb:
                 # callback for temp, status, whatever
                 try: self.tempcb(line)
                 except: self.logError(traceback.format_exc())
